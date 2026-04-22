@@ -203,8 +203,9 @@ tr.grp-hd td{background:var(--s3);font-size:9px;font-weight:600;letter-spacing:.
       <span class="dot" style="background:#d4920a"></span> Bengkel / Mitra
     </div>
     <div class="sb-item" onclick="nav('sroi',this)" id="nav-sroi">
-      <span class="dot" style="background:#a060d0"></span> SROI Data 
+      <span class="dot" style="background:#a060d0"></span> SROI Data
     </div>
+    <div id="sroi-yr-nav" style="display:none;padding:2px 0 6px 0"></div>
     <hr class="sb-sep">
     <div class="sb-grp">Navigasi</div>
     <div style="padding:4px 14px 8px;font-size:10.5px;color:#555;line-height:1.8" id="sb-state">—</div>
@@ -222,39 +223,8 @@ tr.grp-hd td{background:var(--s3);font-size:9px;font-weight:600;letter-spacing:.
   </div>
 
 <!-- PAGE: SROI DATA SUPPLY -->
-<div id="page-sroi" style="display:none;height:100%;overflow-y:auto;padding:22px 26px">
-
-  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px">
-    <div>
-      <div style="font-size:17px;font-weight:600;letter-spacing:-.02em">SROI Data Supply</div>
-      <div style="font-size:10.5px;color:var(--t2);margin-top:3px;font-family:var(--mono)">Input program · Output peserta · Output ekonomi mitra</div>
-    </div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-      <select id="sroi-prog" style="padding:5px 8px;border:1px solid var(--border);border-radius:var(--r);font-family:var(--body);font-size:11.5px;background:var(--surf)" onchange="renderSroi()">
-        <option value="all">Semua program</option>
-      </select>
-    </div>
-  </div>
-
-  <!-- LEVEL A: KPI cards per tahun -->
-  <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:10px;padding-bottom:4px;border-bottom:1px solid var(--border)">Level A — Total TJSL per tahun</div>
-  <div id="sroi-cards-a" style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px"></div>
-
-  <!-- LEVEL B: Per program per tahun -->
-  <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">Level B — Per program</div>
-  <div style="overflow-x:auto;margin-bottom:20px">
-  <table id="sroi-table-b" style="width:100%;border-collapse:collapse;font-size:12px">
-    <thead id="sroi-head-b"></thead>
-    <tbody id="sroi-body-b"></tbody>
-  </table>
-  </div>
-
-  <div style="font-size:10px;color:var(--t3);margin-top:8px;line-height:1.6">
-    * Penjualan pelumas dan pendapatan jasa: data tersedia 2024–2025 saja.<br>
-    * 2025 satuan liter (diperlakukan setara botol sesuai kesepakatan).<br>
-    * PM 2019 sebagian besar belum diisi di sumber data.<br>
-    * Klik angka untuk copy.
-  </div>
+<div id="page-sroi" style="display:none;height:100%;overflow:hidden">
+  <div style="height:100%;overflow-y:auto;padding:20px 24px" id="sroi-detail"></div>
 </div>
 
 </div>
@@ -292,7 +262,9 @@ function cp(v){navigator.clipboard&&navigator.clipboard.writeText(String(v));con
 let STATE={page:'program',path:[],selYr:'all',selCat:'all',detailView:'table',expanded:new Set(),chart:null,
   // H3 state
   h3Yr:'2024',h3Search:'',h3Status:'all',h3Tipe:'all',
-  openProgs:new Set(),openUnits:new Set(),openBengkel:new Set()
+  openProgs:new Set(),openUnits:new Set(),openBengkel:new Set(),
+  // H4 state
+  sroiYr:'2025',
 };
 
 function nav(page,el){
@@ -300,6 +272,7 @@ function nav(page,el){
   el.classList.add('on');
   STATE.page=page;STATE.path=[];STATE.expanded.clear();
   document.getElementById('page-sroi').style.display=page==='sroi'?'block':'none';
+  document.getElementById('sroi-yr-nav').style.display=page==='sroi'?'block':'none';
   if(page==='sroi'){renderSroi();return;}
   if(page!=='bengkel'){STATE.openProgs.clear();STATE.openUnits.clear();STATE.openBengkel.clear();}
   render();
@@ -899,233 +872,331 @@ function toggleProv(id){const el=document.getElementById(id);if(!el)return;const
 // ════════════════════════════
 function renderSroi(){
   if(typeof SROI === 'undefined'){
-    document.getElementById('sroi-cards-a').innerHTML='<div class="empty">Data SROI belum dimuat.</div>';
-    console.error('SROI not defined');
+    const el=document.getElementById('sroi-detail');
+    if(el) el.innerHTML='<div class="empty">Data SROI belum dimuat.</div>';
     return;
   }
-  // Populate program filter
-  const sel = document.getElementById('sroi-prog');
-  if(sel && sel.options.length === 1) {
-    Object.entries(PRG).forEach(([k,p])=>{
-      const opt = document.createElement('option');
-      opt.value = k; opt.textContent = p.label;
-      sel.appendChild(opt);
-    });
-  }
-  const filtProg = sel ? sel.value : 'all';
 
-  const YEARS_H4 = ['2019','2020','2021','2022','2023','2024','2025'];
+  // filtProg: read from existing select if present, else default 'all'
+  const _sel = document.getElementById('sroi-prog');
+  const filtProg = _sel ? _sel.value : 'all';
   const S = SROI;
+  const YEARS_H4 = ['2019','2020','2021','2022','2023','2024','2025'];
+  const yr = STATE.sroiYr;
 
-  // ── Level A: Total per tahun ──
-  const cardsA = document.getElementById('sroi-cards-a');
-  if(!cardsA) return;
-
-  // Coverage flags per year
-  const cov = {
-    '2019':{pm:'parsial',sales:false},'2020':{pm:'ada',sales:false},
-    '2021':{pm:'ada',sales:false},'2022':{pm:'ada',sales:false},
-    '2023':{pm:'ada',sales:false},'2024':{pm:'ada',sales:true},
-    '2025':{pm:'ada',sales:true},
-  };
-
-  const thStyle = 'padding:7px 10px;text-align:right;font-size:8.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);background:var(--s2);border-bottom:1px solid var(--border);white-space:nowrap';
-  const thLStyle = thStyle.replace('text-align:right','text-align:left');
-  const tdR = (v,extra='') => `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:11.5px;border-bottom:1px solid var(--border);cursor:copy;white-space:nowrap${extra}" onclick="cp(${v||0})" title="${FL(v)}">${v?M(v):'—'}</td>`;
-  const tdL = (v,s='') => `<td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px${s}">${v}</td>`;
-
-  // ── KPI CARDS ──
-  let cardsHtml = '';
-  YEARS_H4.forEach(yr => {
-    const d = filtProg === 'all' ? S.year_totals[yr] : (S.prog_year[filtProg]?.[yr]);
-    const hasSales = cov[yr]?.sales;
-    const isExpA = STATE.expanded.has('sroi-yr-'+yr);
-    if(!d) {
-      cardsHtml += `<div style="background:var(--surf);border:1px solid var(--border);border-radius:var(--rl);padding:14px 16px;opacity:.5">
-        <div style="font-size:22px;font-weight:600;font-family:var(--mono);color:var(--t3)">${yr}</div>
-        <div style="font-size:10.5px;color:var(--t3);margin-top:6px">Tidak ada data</div>
+  // ── Sidebar: year sub-nav under SROI Data ──
+  const yrNav = document.getElementById('sroi-yr-nav');
+  if(yrNav) {
+    yrNav.style.display = 'block';
+    yrNav.innerHTML = YEARS_H4.slice().reverse().map(y => {
+      const d2 = filtProg==='all' ? S.year_totals[y] : S.prog_year[filtProg]?.[y];
+      const pct2 = d2?.ang ? Math.round(d2.real/d2.ang*100) : null;
+      const isOn = y === yr;
+      const pctC = pct2===null?'#666':pct2>=90?'#5aab7a':pct2>=70?'#c4830a':'#c0392b';
+      return `<div onclick="STATE.sroiYr='${y}';STATE.expanded.clear();renderSroi()"
+        style="display:flex;align-items:center;justify-content:space-between;
+               padding:5px 14px 5px 28px;cursor:pointer;
+               background:${isOn?'rgba(34,145,90,.1)':'transparent'};
+               border-left:2px solid ${isOn?'var(--gnm)':'transparent'};
+               transition:background .1s">
+        <span style="font-size:11px;font-family:var(--mono);
+                     color:${isOn?'#e8e6e0':'#888'};
+                     font-weight:${isOn?'500':'400'}">${y}</span>
+        <span style="font-size:10px;font-family:var(--mono);color:${pctC}">${pct2!==null?pct2+'%':'—'}</span>
       </div>`;
-      return;
-    }
+    }).join('');
+  }
 
-    const pct = d.ang ? Math.round(d.real/d.ang*100) : null;
-    const pctCol = pct===null?'var(--t3)':pct>=90?'var(--green)':pct>=70?'var(--amber)':'var(--red)';
-    const accentTop = pct===null?'var(--border2)':pct>=90?'var(--gnm)':pct>=70?'#d4920a':'#c0392b';
+  // ── Right panel: single year ──
+  const detail = document.getElementById('sroi-detail');
+  if(!detail) return;
 
-    cardsHtml += `
-    <div style="background:var(--surf);border:1px solid var(--border);border-left:4px solid ${accentTop};border-radius:var(--rl);overflow:hidden">
+  const d = filtProg==='all' ? S.year_totals[yr] : S.prog_year[filtProg]?.[yr];
+  const cov = {'2019':{sales:false,pm:'parsial'},'2020':{sales:false,pm:'ada'},'2021':{sales:false,pm:'ada'},'2022':{sales:false,pm:'ada'},'2023':{sales:false,pm:'ada'},'2024':{sales:true,pm:'ada'},'2025':{sales:true,pm:'ada'}};
+  const hasSales = cov[yr]?.sales;
 
-      <!-- Main row: semua KPI horizontal, satu baris -->
-      <div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 1fr 1fr 1fr 110px;min-height:56px">
+  if(!d) {
+    detail.innerHTML=`<div class="empty">Tidak ada data untuk tahun ${yr}</div>`;
+    return;
+  }
 
-        <!-- Tahun + % -->
-        <div style="padding:12px 14px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center">
-          <div style="font-size:18px;font-weight:600;font-family:var(--mono);letter-spacing:-.02em">${yr}</div>
-          <div style="font-size:10.5px;font-family:var(--mono);color:${pctCol};margin-top:2px;font-weight:500">${pct!==null?pct+'%':'—'}</div>
-        </div>
+  const pct = d.ang ? Math.round(d.real/d.ang*100) : null;
+  const pctCol = pct===null?'var(--t3)':pct>=90?'var(--green)':pct>=70?'var(--amber)':'var(--red)';
+  const accentColor = pct===null?'var(--border2)':pct>=90?'var(--gnm)':pct>=70?'#d4920a':'#c0392b';
+  const accentBg = pct===null?'transparent':pct>=90?'rgba(34,145,90,.04)':pct>=70?'rgba(212,146,10,.04)':'rgba(192,57,43,.04)';
 
-        <!-- Anggaran -->
-        <div style="padding:10px 12px;border-right:1px solid var(--border)">
-          <div style="font-size:7.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:4px">Anggaran</div>
-          <div style="font-family:var(--mono);font-size:11.5px;cursor:copy" onclick="cp(${d.ang})" title="${FL(d.ang)}">${M(d.ang)}</div>
-        </div>
-
-        <!-- Realisasi -->
-        <div style="padding:10px 12px;border-right:1px solid var(--border);background:${pct>=90?'rgba(34,145,90,.06)':pct>=70?'rgba(212,146,10,.05)':'rgba(192,57,43,.05)'}">
-          <div style="font-size:7.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:4px">Realisasi</div>
-          <div style="font-family:var(--mono);font-size:11.5px;color:${pctCol};cursor:copy" onclick="cp(${d.real})" title="${FL(d.real)}">${M(d.real)}</div>
-        </div>
-
-        <!-- PM -->
-        <div style="padding:10px 12px;border-right:1px solid var(--border);border-left:2px solid var(--s3)">
-          <div style="font-size:7.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:4px">PM${cov[yr]?.pm==='parsial'?' <span style="color:var(--amber);font-size:8px">*</span>':''}</div>
-          <div style="font-family:var(--mono);font-size:11.5px;cursor:copy" onclick="cp(${d.pm||0})">${d.pm?d.pm.toLocaleString('id-ID'):'—'}</div>
-        </div>
-
-        <!-- Vol pelumas -->
-        <div style="padding:10px 12px;border-right:1px solid var(--border)">
-          <div style="font-size:7.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:4px">Vol Pelumas</div>
-          <div style="font-family:var(--mono);font-size:11.5px;color:${hasSales?'var(--green)':'var(--t3)'};cursor:copy" onclick="cp(${d.vol||0})">${hasSales&&d.vol?Math.round(d.vol).toLocaleString()+' btl':'—'}</div>
-        </div>
-
-        <!-- Nilai pelumas -->
-        <div style="padding:10px 12px;border-right:1px solid var(--border)">
-          <div style="font-size:7.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:4px">Nilai Pelumas</div>
-          <div style="font-family:var(--mono);font-size:11.5px;cursor:copy" onclick="cp(${d.val||0})">${hasSales&&d.val?M(d.val):'—'}</div>
-        </div>
-
-        <!-- Pendapatan jasa -->
-        <div style="padding:10px 12px;border-right:1px solid var(--border)">
-          <div style="font-size:7.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:4px">Pendapatan Jasa</div>
-          <div style="font-family:var(--mono);font-size:11.5px;cursor:copy" onclick="cp(${d.jas||0})">${hasSales&&d.jas?M(d.jas):'—'}</div>
-        </div>
-
-        <!-- Total ekonomi -->
-        <div style="padding:10px 12px;border-right:1px solid var(--border)">
-          <div style="font-size:7.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:4px">Total Ekonomi</div>
-          <div style="font-family:var(--mono);font-size:11.5px;cursor:copy" onclick="cp(${(d.val||0)+(d.jas||0)})">${hasSales&&(d.val||d.jas)?M((d.val||0)+(d.jas||0)):'—'}</div>
-        </div>
-
-        <!-- Breakdown button -->
-        <div style="display:flex;align-items:center;justify-content:center;gap:5px;cursor:pointer;background:var(--s2);padding:10px 12px;transition:background .1s" onclick="toggleExp('sroi-yr-${yr}')">
-          <span style="font-size:10px;color:var(--t2)">${isExpA?'Tutup':'Detail'}</span>
-          <span style="font-family:var(--mono);font-size:10px;color:var(--t2)">${isExpA?'▲':'▼'}</span>
-        </div>
-      </div>
-
-      <!-- Expand panel: 3-level nested -->
-      ${isExpA ? `<div style="border-top:2px solid ${accentTop}">
-        ${(filtProg==='all'?Object.keys(S.prog_year):[filtProg]).map(prog=>{
-          const pd=(filtProg==='all'?S.prog_year[prog]?.[yr]:S.prog_year[prog]?.[yr]);
-          if(!pd||(!pd.ang&&!pd.real))return'';
-          const pp=pd.ang?Math.round(pd.real/pd.ang*100):null;
-          const ppC=pp===null?'var(--t3)':pp>=90?'var(--green)':pp>=70?'var(--amber)':'var(--red)';
-          const keyProg='sroi-'+yr+'-'+prog;
-          const isProgExp=STATE.expanded.has(keyProg);          const provBtnProg=pd.rid?`<button class="prov-btn" onclick="event.stopPropagation();toggleProv('prov-s-${prog}-${yr}')">src</button>`:'';
-
-          // Units under this prog+yr
-          const UNITS_ORD=['PUC','PUG','PUJ','PTPL Pusat','SR I','SR II','SR III','SR IV','SR V','SR VI','SR VII'];
-          const unitsHtml = isProgExp ? UNITS_ORD.map(unit=>{
-            const cell=IDX[prog]?.[unit]?.[yr];if(!cell||(!cell.ang&&!cell.real&&!(cell.b_ids||[]).length))return'';
-            const up=cell.ang?Math.round(cell.real/cell.ang*100):null;
-            const upC=up===null?'var(--t3)':up>=90?'var(--green)':up>=70?'var(--amber)':'var(--red)';
-            let uVol=0,uVal=0,uJas=0;
-            (cell.b_ids||[]).forEach(bid=>{const b=BKL[bid];if(!b)return;const ann=b.data?.[yr]?.annual;if(ann){uVol+=ann.vol||0;uVal+=ann.val||0;uJas+=ann.jas||0;}});
-            const keyUnit='sroi-'+yr+'-'+prog+'-'+unit;
-            const isUnitExp=STATE.expanded.has(keyUnit);
-            const provBtnUnit=cell.rid?`<button class="prov-btn" onclick="event.stopPropagation();toggleProv('prov-s-${prog}-${unit}-${yr}')">src</button>`:'';
-            const hasBkl=(cell.b_ids||[]).length>0;
-
-            // Bengkel under this unit+prog+yr
-            const bklHtml = isUnitExp ? (cell.b_ids||[]).map(bid=>{
-              const b=BKL[bid];if(!b)return'';
-              const ann=b.data?.[yr]?.annual;
-              return`<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 14px 5px 56px;border-bottom:1px solid var(--border);background:#fafffe;font-size:11px">
-                <span>${b.tipe==='induk'?'<span class="badge b-induk">induk</span>':b.tipe==='turunan'?'<span class="badge b-turunan">turunan</span>':''} ${b.nama}${b.flags?.length?` <span class="flag" title="${b.flags.join(', ')}">⚑</span>`:''}</span>
-                <span style="display:flex;gap:12px;font-family:var(--mono)">
-                  <span style="color:var(--green);cursor:copy" onclick="cp(${ann?.vol||0})" title="vol">${ann&&ann.vol>0?Math.round(ann.vol).toLocaleString()+' btl':'—'}</span>
-                  <span style="cursor:copy" onclick="cp(${ann?.val||0})" title="nilai pelumas">${ann&&ann.val?M(ann.val):'—'}</span>
-                  <span style="cursor:copy" onclick="cp(${ann?.jas||0})" title="jasa">${ann&&ann.jas?M(ann.jas):'—'}</span>
-                  <span style="color:var(--t3)">${b.status||'—'}</span>
-                </span>
-              </div>`;
-            }).join('') : '';
-
-            return`<div style="border-bottom:1px solid var(--border)">
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 14px 6px 28px;background:var(--s2);cursor:pointer" onclick="toggleExp('sroi-${yr}-${prog}-${unit}')">
-                <span style="font-size:11.5px;display:flex;align-items:center;gap:6px">${unitBadge(unit)} ${unit} ${provBtnUnit}${hasBkl?`<span style="font-size:9px;color:var(--t3)">(${(cell.b_ids||[]).length} bengkel)</span>`:''}</span>
-                <span style="display:flex;gap:16px;font-family:var(--mono);font-size:11px;align-items:center">
-                  <span style="cursor:copy" onclick="event.stopPropagation();cp(${cell.ang||0})">${M(cell.ang)}</span>
-                  <span style="cursor:copy;color:${upC}" onclick="event.stopPropagation();cp(${cell.real||0})">${M(cell.real)} <span style="color:${upC}">${up!==null?up+'%':'—'}</span></span>
-                  <span style="color:var(--green);cursor:copy" onclick="event.stopPropagation();cp(${uVol})">${uVol>0?Math.round(uVol).toLocaleString()+' btl':'—'}</span>
-                  <span style="cursor:copy" onclick="event.stopPropagation();cp(${uVal})">${uVal?M(uVal):'—'}</span>
-                  <span style="cursor:copy" onclick="event.stopPropagation();cp(${uJas})">${uJas?M(uJas):'—'}</span>
-                  ${hasBkl?`<span style="font-size:10px;color:var(--t2)">${isUnitExp?'▲':'▼'}</span>`:''}
-                </span>
-              </div>
-              ${cell.rid?`<div style="display:none" id="prov-row-prov-s-${prog}-${unit}-${yr}"><div style="padding:0 14px 8px 28px"><div class="prov-panel show" id="prov-s-${prog}-${unit}-${yr}">${buildProvHTML(cell.rid)}</div></div></div>`:''}
-              ${bklHtml}
-            </div>`;
-          }).join('') : '';
-
-          return`<div style="border-bottom:1px solid var(--border)">
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;cursor:pointer;background:var(--surf)" onclick="toggleExp('sroi-${yr}-${prog}')">
-              <span style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px">${progBadge(prog)} ${PRG[prog]?.label||prog} ${provBtnProg}</span>
-              <span style="display:flex;gap:16px;font-family:var(--mono);font-size:11px;align-items:center">
-                <span style="cursor:copy" onclick="event.stopPropagation();cp(${pd.ang||0})">${M(pd.ang)}</span>
-                <span style="cursor:copy;color:${ppC}" onclick="event.stopPropagation();cp(${pd.real||0})">${M(pd.real)} <span style="color:${ppC}">${pp!==null?pp+'%':'—'}</span></span>
-                <span style="cursor:copy" onclick="event.stopPropagation();cp(${pd.pm||0})">${pd.pm?pd.pm.toLocaleString('id-ID')+' org':'—'}</span>
-                <span style="font-size:10px;color:var(--t2)">${isProgExp?'▲':'▼'}</span>
-              </span>
-            </div>
-            ${pd.rid?`<div style="display:none" id="prov-row-prov-s-${prog}-${yr}"><div style="padding:0 14px 8px 14px"><div class="prov-panel show" id="prov-s-${prog}-${yr}">${buildProvHTML(pd.rid)}</div></div></div>`:''}
-            ${unitsHtml}
-          </div>`;
-        }).join('')}
-      </div>` : ''}
+  // progress bar helper
+  const pBar = (val, tot, cls='g') => {
+    const w = tot ? Math.min(val/tot*100, 100) : 0;
+    return `<div style="height:3px;background:var(--s3);border-radius:99px;overflow:hidden;margin-top:5px">
+      <div style="height:100%;width:${w}%;background:${cls==='g'?'var(--gnm)':cls==='a'?'#d4920a':'#c0392b'};border-radius:99px"></div>
     </div>`;
-  });
-  cardsA.innerHTML = cardsHtml;
+  };
+  const pBarCls = pct===null?'g':pct>=90?'g':pct>=70?'a':'r';
 
-  // ── Level B: Per program, all years ──
-  const headB = document.getElementById('sroi-head-b');
-  const bodyB = document.getElementById('sroi-body-b');
-  if(!headB || !bodyB) return;
+  // KPI card — single vertical card, top→bottom flow
+  let html = `
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div>
+      <div style="font-size:24px;font-weight:600;font-family:var(--mono);letter-spacing:-.02em;line-height:1">${yr}</div>
+      <div style="font-size:11px;color:var(--t2);margin-top:4px">${filtProg==='all'?'Semua program TJSL':PRG[filtProg]?.label||filtProg}</div>
+    </div>
+    <div>
+      <select id="sroi-prog" style="padding:5px 8px;border:1px solid var(--border);border-radius:var(--r);font-family:var(--body);font-size:11.5px;background:var(--surf)" onchange="renderSroi()">
+        <option value="all" ${filtProg==='all'?'selected':''}>Semua program</option>
+        ${Object.entries(PRG).map(([k,p])=>`<option value="${k}" ${filtProg===k?'selected':''}>${p.label}</option>`).join('')}
+      </select>
+    </div>
+  </div>
 
-  const progList = filtProg === 'all' ? Object.keys(S.prog_year) : [filtProg];
-  const activeYrs = YEARS_H4.filter(y => progList.some(k => S.prog_year[k]?.[y]));
+  <!-- KPI Card -->
+  <div style="background:var(--surf);border:1px solid var(--border);border-left:4px solid ${accentColor};border-radius:var(--rl);overflow:hidden;margin-bottom:18px">
 
-  headB.innerHTML = `<tr>
-    <th style="${thLStyle}">Program</th>
-    ${activeYrs.map(y=>`<th style="${thStyle}" colspan="3">${y}</th>`).join('')}
-  </tr>
-  <tr>
-    <th style="${thLStyle}"></th>
-    ${activeYrs.map(()=>`<th style="${thStyle}">Ang.</th><th style="${thStyle}">Real.</th><th style="${thStyle}">%</th>`).join('')}
-  </tr>`;
+    <!-- Section: INPUT -->
+    <div style="padding:14px 16px;background:${accentBg}">
+      <div style="font-size:8px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--t3);margin-bottom:12px">Input Program</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+        <span style="font-size:12px;color:var(--t2)">Anggaran</span>
+        <span style="font-family:var(--mono);font-size:13px;cursor:copy" onclick="cp(${d.ang})" title="Rp ${FL(d.ang)}">${M(d.ang)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
+        <span style="font-size:12px;color:var(--t2)">Realisasi</span>
+        <span style="font-family:var(--mono);font-size:13px;font-weight:600;color:${pctCol};cursor:copy" onclick="cp(${d.real})" title="Rp ${FL(d.real)}">${M(d.real)}</span>
+      </div>
+      ${pBar(d.real, d.ang, pBarCls)}
+      <div style="display:flex;justify-content:flex-end;margin-top:4px">
+        <span style="font-family:var(--mono);font-size:11px;color:${pctCol};font-weight:600">${pct!==null?pct+'% realisasi':'—'}</span>
+      </div>
+    </div>
 
-  let rowsB = '';
-  ['CSV','NON-CSV'].forEach(kat => {
-    const group = progList.filter(k => PRG[k]?.kat === kat && Object.keys(S.prog_year[k]||{}).length);
-    if(!group.length) return;
-    rowsB += `<tr><td colspan="${1+activeYrs.length*3}" style="padding:4px 10px;background:var(--s3);font-size:9px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--t2);border-bottom:1px solid var(--border)">${kat}</td></tr>`;
-    group.forEach(k => {
-      const pYrs = S.prog_year[k] || {};
-      rowsB += `<tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:6px 10px;font-size:12px">${progBadge(k)} ${PRG[k]?.label||k}</td>
-        ${activeYrs.map(yr => {
-          const d = pYrs[yr];
-          if(!d || (!d.ang && !d.real)) return '<td class="r" style="padding:6px 10px;text-align:right;border-bottom:1px solid var(--border);color:var(--t3)">—</td><td class="r" style="padding:6px 10px;text-align:right;border-bottom:1px solid var(--border);color:var(--t3)">—</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);color:var(--t3)">—</td>';
-          const pct = d.ang ? Math.round(d.real/d.ang*100) : null;
-          const pctCol = pct===null?'var(--t3)':pct>=90?'var(--green)':pct>=70?'var(--amber)':'var(--red)';
-          return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:11px;cursor:copy;border-bottom:1px solid var(--border)" onclick="cp(${d.ang})">${M(d.ang)}</td>
-                  <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:11px;cursor:copy;border-bottom:1px solid var(--border)" onclick="cp(${d.real})">${M(d.real)}</td>
-                  <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:11px;color:${pctCol};border-bottom:1px solid var(--border)">${pct!==null?pct+'%':'—'}</td>`;
+    <!-- Divider -->
+    <div style="height:1px;background:var(--border)"></div>
+
+    <!-- Section: OUTPUT PESERTA -->
+    <div style="padding:14px 16px">
+      <div style="font-size:8px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--t3);margin-bottom:12px">Output — Peserta</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-size:12px;color:var(--t2)">PM (Penerima Manfaat)${cov[yr]?.pm==='parsial'?` <span style="font-size:9px;background:var(--aml);color:var(--amber);padding:1px 5px;border-radius:3px">parsial</span>`:''}</span>
+        <span style="font-family:var(--mono);font-size:16px;font-weight:600;cursor:copy" onclick="cp(${d.pm||0})">${d.pm?d.pm.toLocaleString('id-ID'):'—'}</span>
+      </div>
+      ${d.pm?`<div style="font-size:10px;color:var(--t3);text-align:right;margin-top:2px">orang</div>`:''}
+    </div>
+
+    <!-- Divider -->
+    <div style="height:1px;background:var(--border)"></div>
+
+    <!-- Section: OUTPUT EKONOMI -->
+    <div style="padding:14px 16px">
+      <div style="font-size:8px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--t3);margin-bottom:12px">Output — Ekonomi Mitra</div>
+      ${hasSales ? `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+        <span style="font-size:12px;color:var(--t2)">Vol. pelumas terjual</span>
+        <span style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--green);cursor:copy" onclick="cp(${d.vol||0})">${d.vol?Math.round(d.vol).toLocaleString()+' btl':'—'}</span>
+      </div>
+      <div style="background:var(--s2);border-radius:var(--r);padding:10px 12px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+          <span style="font-size:11px;color:var(--t2)">Nilai pelumas</span>
+          <span style="font-family:var(--mono);font-size:12px;cursor:copy" onclick="cp(${d.val||0})">${d.val?M(d.val):'—'}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+          <span style="font-size:11px;color:var(--t2)">Pendapatan jasa</span>
+          <span style="font-family:var(--mono);font-size:12px;cursor:copy" onclick="cp(${d.jas||0})">${d.jas?M(d.jas):'—'}</span>
+        </div>
+        <div style="height:1px;background:var(--border);margin-bottom:6px"></div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span style="font-size:11px;font-weight:600;color:var(--ink)">Total ekonomi</span>
+          <span style="font-family:var(--mono);font-size:13px;font-weight:600;cursor:copy" onclick="cp(${(d.val||0)+(d.jas||0)})">${(d.val||d.jas)?M((d.val||0)+(d.jas||0)):'—'}</span>
+        </div>
+      </div>` :
+      `<div style="font-size:11px;color:var(--t3);font-style:italic;padding:4px 0">Data penjualan belum tersedia untuk tahun ini</div>`}
+    </div>
+
+  </div>
+
+  <!-- Program breakdown header -->
+  <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);padding-bottom:6px;border-bottom:1px solid var(--border);margin-bottom:8px">
+    Breakdown per program
+  </div>`;
+
+  // Program list with nested expand
+  const progKeys = filtProg==='all' ? Object.keys(S.prog_year) : [filtProg];
+  html += progKeys.map(prog => {
+    const pd = S.prog_year[prog]?.[yr];
+    if(!pd||(!pd.ang&&!pd.real)) return '';
+    const pp = pd.ang?Math.round(pd.real/pd.ang*100):null;
+    const ppC = pp===null?'var(--t3)':pp>=90?'var(--green)':pp>=70?'var(--amber)':'var(--red)';
+    const keyProg = 'sroi-'+yr+'-'+prog;
+    const isProgExp = STATE.expanded.has(keyProg);
+    const provBtnProg = pd.rid?`<button class="prov-btn" onclick="event.stopPropagation();toggleProv('prov-s-${prog}-${yr}')">src</button>`:'';
+
+    const UNITS_ORD=['PUC','PUG','PUJ','PTPL Pusat','SR I','SR II','SR III','SR IV','SR V','SR VI','SR VII'];
+    const unitsHtml = isProgExp ? UNITS_ORD.map(unit=>{
+      const cell=IDX[prog]?.[unit]?.[yr];
+      if(!cell||(!cell.ang&&!cell.real&&!(cell.b_ids||[]).length))return'';
+      const up=cell.ang?Math.round(cell.real/cell.ang*100):null;
+      const upC=up===null?'var(--t3)':up>=90?'var(--green)':up>=70?'var(--amber)':'var(--red)';
+      let uVol=0,uVal=0,uJas=0;
+      (cell.b_ids||[]).forEach(bid=>{const b=BKL[bid];if(!b)return;const ann=b.data?.[yr]?.annual;if(ann){uVol+=ann.vol||0;uVal+=ann.val||0;uJas+=ann.jas||0;}});
+      const keyUnit='sroi-'+yr+'-'+prog+'-'+unit;
+      const isUnitExp=STATE.expanded.has(keyUnit);
+      const hasBkl=(cell.b_ids||[]).length>0;
+      const provBtnUnit=cell.rid?`<button class="prov-btn" onclick="event.stopPropagation();toggleProv('prov-s-${prog}-${unit}-${yr}')">src</button>`:'';
+
+      const bklHtml = isUnitExp ? (cell.b_ids||[]).map(bid=>{
+        const b=BKL[bid];if(!b)return'';
+        const ann=b.data?.[yr]?.annual;
+        return`<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 14px 5px 56px;border-bottom:1px solid var(--border);background:#fafffe;font-size:11px">
+          <span>${b.tipe==='induk'?'<span class="badge b-induk">induk</span>':b.tipe==='turunan'?'<span class="badge b-turunan">turunan</span>':''} ${b.nama}${b.flags?.length?` <span class="flag" title="${b.flags.join(', ')}">⚑</span>`:''}</span>
+          <span style="display:flex;gap:10px;font-family:var(--mono);font-size:10.5px">
+            <span style="color:var(--green);cursor:copy" onclick="cp(${ann?.vol||0})">${ann&&ann.vol>0?Math.round(ann.vol).toLocaleString()+' btl':'—'}</span>
+            <span style="cursor:copy" onclick="cp(${ann?.val||0})">${ann&&ann.val?M(ann.val):'—'}</span>
+            <span style="cursor:copy" onclick="cp(${ann?.jas||0})">${ann&&ann.jas?M(ann.jas):'—'}</span>
+            <span style="color:var(--t3)">${b.status||'—'}</span>
+          </span>
+        </div>`;
+      }).join('') : '';
+
+      return`<div style="border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 14px 6px 28px;background:var(--s2);cursor:pointer" onclick="toggleExp('sroi-${yr}-${prog}-${unit}')">
+          <span style="font-size:11.5px;display:flex;align-items:center;gap:6px">${unitBadge(unit)} ${unit} ${provBtnUnit}${hasBkl?`<span style="font-size:9px;color:var(--t3)">(${cell.b_ids.length})</span>`:''}</span>
+          <span style="display:flex;gap:12px;font-family:var(--mono);font-size:11px;align-items:center">
+            <span onclick="event.stopPropagation();cp(${cell.ang||0})">${cell.ang?M(cell.ang):'—'}</span>
+            <span style="color:${upC}" onclick="event.stopPropagation();cp(${cell.real||0})">${cell.real?M(cell.real):'—'} ${up!==null?up+'%':'—'}</span>
+            <span style="color:var(--green)" onclick="event.stopPropagation();cp(${uVol})">${uVol>0?Math.round(uVol).toLocaleString()+' btl':'—'}</span>
+            <span onclick="event.stopPropagation();cp(${uJas})">${uJas?M(uJas):'—'}</span>
+            ${hasBkl?`<span style="color:var(--t2)">${isUnitExp?'▲':'▼'}</span>`:''}
+          </span>
+        </div>
+        ${cell.rid?`<div style="display:none" id="prov-row-prov-s-${prog}-${unit}-${yr}"><div style="padding:0 14px 6px 28px"><div class="prov-panel show" id="prov-s-${prog}-${unit}-${yr}">${buildProvHTML(cell.rid)}</div></div></div>`:''}
+        ${bklHtml}
+      </div>`;
+    }).join('') : '';
+
+    return`<div style="border:1px solid var(--border);border-radius:var(--rl);overflow:hidden;margin-bottom:6px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;cursor:pointer;background:var(--surf)" onclick="toggleExp('sroi-${yr}-${prog}')">
+        <span style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px">${progBadge(prog)} ${PRG[prog]?.label||prog} ${provBtnProg}</span>
+        <span style="display:flex;gap:10px;font-family:var(--mono);font-size:11px;align-items:center">
+          <span onclick="event.stopPropagation();cp(${pd.ang||0})">${M(pd.ang)}</span>
+          <span style="color:${ppC}" onclick="event.stopPropagation();cp(${pd.real||0})">${M(pd.real)} ${pp!==null?pp+'%':'—'}</span>
+          <span onclick="event.stopPropagation();cp(${pd.pm||0})">${pd.pm?pd.pm.toLocaleString('id-ID')+' org':'—'}</span>
+          <button onclick="event.stopPropagation();copyProgram('${prog}','${yr}')" title="Copy data program + bengkel (TSV)"
+            style="background:none;border:1px solid var(--border);border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer;color:var(--t2);display:flex;align-items:center;gap:4px;font-family:var(--body);transition:all .1s"
+            onmouseover="this.style.background='var(--s2)';this.style.color='var(--ink)'"
+            onmouseout="this.style.background='none';this.style.color='var(--t2)'">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H6zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1H2z"/></svg>
+            TSV
+          </button>
+          <span style="color:var(--t2)">${isProgExp?'▲':'▼'}</span>
+        </span>
+      </div>
+      ${pd.rid?`<div style="display:none" id="prov-row-prov-s-${prog}-${yr}"><div style="padding:0 14px 6px 14px"><div class="prov-panel show" id="prov-s-${prog}-${yr}">${buildProvHTML(pd.rid)}</div></div></div>`:''}
+      ${unitsHtml}
+    </div>`;
+  }).join('');
+
+  // Level B: per program multi-year table (compact, below)
+  const thS = 'padding:6px 8px;text-align:right;font-size:8px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--t3);background:var(--s2);border-bottom:1px solid var(--border);white-space:nowrap';
+  const activeYrs = YEARS_H4.filter(y => progKeys.some(k => S.prog_year[k]?.[y]));
+  html += `<div style="margin-top:20px;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);padding-bottom:6px;border-bottom:1px solid var(--border);margin-bottom:8px">Tren per program (semua tahun)</div>
+  <div style="overflow-x:auto;border:1px solid var(--border);border-radius:var(--rl)"><table style="width:100%;border-collapse:collapse;font-size:11.5px">
+    <thead><tr>
+      <th style="${thS.replace('text-align:right','text-align:left')}">Program</th>
+      ${activeYrs.map(y=>`<th style="${thS}" colspan="2">${y}</th>`).join('')}
+    </tr><tr>
+      <th style="${thS.replace('text-align:right','text-align:left')}"></th>
+      ${activeYrs.map(()=>`<th style="${thS}">Real.</th><th style="${thS}">%</th>`).join('')}
+    </tr></thead><tbody>`;
+  ['CSV','NON-CSV'].forEach(kat=>{
+    const grp=progKeys.filter(k=>PRG[k]?.kat===kat&&Object.keys(S.prog_year[k]||{}).length);
+    if(!grp.length) return;
+    html+=`<tr><td colspan="${1+activeYrs.length*2}" style="padding:3px 8px;background:var(--s3);font-size:8.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--t2);border-bottom:1px solid var(--border)">${kat}</td></tr>`;
+    grp.forEach(k=>{
+      html+=`<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:5px 10px;font-size:11.5px">${progBadge(k)} ${PRG[k]?.label||k}</td>
+        ${activeYrs.map(y=>{
+          const pd2=S.prog_year[k]?.[y];
+          if(!pd2||(!pd2.ang&&!pd2.real))return`<td colspan="2" style="padding:5px 8px;text-align:right;color:var(--t3);font-family:var(--mono);font-size:10px">—</td>`;
+          const pp2=pd2.ang?Math.round(pd2.real/pd2.ang*100):null;
+          const ppC2=pp2===null?'var(--t3)':pp2>=90?'var(--green)':pp2>=70?'var(--amber)':'var(--red)';
+          const isCurYr=y===yr;
+          return`<td style="padding:5px 8px;text-align:right;font-family:var(--mono);font-size:10px;cursor:copy;${isCurYr?'background:var(--gnl);':''}font-weight:${isCurYr?'600':'400'}" onclick="cp(${pd2.real})">${M(pd2.real)}</td>
+                 <td style="padding:5px 8px;text-align:right;font-family:var(--mono);font-size:10px;color:${ppC2};${isCurYr?'background:var(--gnl);':''}">${pp2!==null?pp2+'%':'—'}</td>`;
         }).join('')}
       </tr>`;
     });
   });
-  bodyB.innerHTML = rowsB;
+  html += `</tbody></table></div>
+  <div style="font-size:9.5px;color:var(--t3);margin-top:10px;line-height:1.7">
+    * Vol & nilai pelumas, pendapatan jasa: data 2024–2025 saja &nbsp;·&nbsp;
+    * 2025 satuan liter (setara botol) &nbsp;·&nbsp;
+    * Klik angka untuk copy
+  </div>`;
+
+  detail.innerHTML = html;
+}
+
+// ── COPY PROGRAM (TSV) ──
+function copyProgram(prog, yr) {
+  const S = SROI;
+  const pd = S.prog_year[prog]?.[yr];
+  if(!pd) return;
+
+  const pLabel = PRG[prog]?.label || prog;
+  const pct = pd.ang ? Math.round(pd.real/pd.ang*100) : null;
+  const UNITS_ORD = ['PUC','PUG','PUJ','PTPL Pusat','SR I','SR II','SR III','SR IV','SR V','SR VI','SR VII'];
+
+  // ── Baris header program ──
+  const lines = [
+    `Program\t${prog} — ${pLabel}`,
+    `Tahun\t${yr}`,
+    `Anggaran\t${pd.ang||0}`,
+    `Realisasi\t${pd.real||0}`,
+    `% Realisasi\t${pct!==null?pct+'%':'—'}`,
+    `PM\t${pd.pm||0}`,
+    pd.vol>0?`Vol. pelumas (btl)\t${Math.round(pd.vol||0)}`:'',
+    pd.val>0?`Nilai pelumas (Rp)\t${Math.round(pd.val||0)}`:'',
+    pd.jas>0?`Pendapatan jasa (Rp)\t${Math.round(pd.jas||0)}`:'',
+    '',
+    // ── Header tabel bengkel ──
+    'Unit\tBengkel\tTipe\tStatus\tTahun Masuk\tVol (btl)\tNilai Pelumas (Rp)\tJasa (Rp)',
+  ].filter(l => l !== undefined);
+
+  // ── Baris per bengkel ──
+  UNITS_ORD.forEach(unit => {
+    const cell = IDX[prog]?.[unit]?.[yr];
+    if(!cell || !(cell.b_ids||[]).length) return;
+    (cell.b_ids||[]).forEach(bid => {
+      const b = BKL[bid]; if(!b) return;
+      const ann = b.data?.[yr]?.annual;
+      lines.push([
+        unit,
+        b.nama,
+        b.tipe||'—',
+        b.status||'—',
+        b.thn||'—',
+        ann?.vol>0 ? Math.round(ann.vol) : 0,
+        ann?.val ? Math.round(ann.val) : 0,
+        ann?.jas ? Math.round(ann.jas) : 0,
+      ].join('\t'));
+    });
+  });
+
+  const tsv = lines.join('\n');
+  navigator.clipboard.writeText(tsv).then(() => {
+    const el = document.getElementById('toast');
+    el.textContent = `✓ Copied: ${pLabel} ${yr} (${lines.length} baris TSV)`;
+    el.classList.add('on');
+    clearTimeout(toast_t);
+    toast_t = setTimeout(()=>el.classList.remove('on'), 2500);
+  }).catch(() => {
+    // Fallback: textarea select
+    const ta = document.createElement('textarea');
+    ta.value = tsv; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
 }
 
 // ── INIT ──
